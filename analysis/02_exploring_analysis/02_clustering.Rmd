@@ -1,0 +1,150 @@
+---
+title: "02_clustering.Rmd"
+author: "Katy Walsh"
+date: "3/22/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggdendro)
+library(GenomicRanges)
+source("util/intersect_functions.R")
+source("util/plotting_functions.R")
+source("util/_setup.R")
+
+```
+
+
+
+```{r}
+## clustering ##
+
+# load in the promoters annotations and peak_occurence_matrix for lncRNA and mRNA promoters
+promoters <- rtracklayer::import("results/lncrna_mrna_promoters.gtf")
+peak_occurence_matrix <- read.table("analysis/01_global_peak_properties/results/lncrna_mrna_promoter_peak_occurence_matrix.tsv")
+
+# Let's filter again to make sure we have at least 250 peaks
+# This is a different filtering because we're now filtering on at least 250 peaks on promoter regions rather than 250 peaks across the genome.
+peak_occurence_matrix <- peak_occurence_matrix[rowSums(peak_occurence_matrix) > 250, ]
+
+#dist(peak_occurence_matrix[1:2,], method = "euclidean")
+  #or
+#dist(peak_occurence_matrix[1:4,], method = "binary")
+  #but we'll use binary
+
+peak_occurence_dist <- dist(peak_occurence_matrix, method = "binary")
+
+bin_hier <- hclust(peak_occurence_dist, method = "complete")
+
+plot(bin_hier)
+
+# To make this bigger, we can plot it as a pdf
+pdf("figures/dbp_hclust_dendro.pdf", height = 12, width = 70)
+plot(bin_hier)
+dev.off()
+
+#to see the order of the clustering, similar ones are grouped together
+bin_hier$labels[bin_hier$order]
+
+
+#can also plot using ggplot, more customizable
+
+# ggdendro::ggdendrogram(bin_hier, rotate = FALSE,  size = 3, 
+#                        theme_dendro = TRUE) +
+#   coord_flip() +
+#   # scale_y_continuous() +
+#   # scale_x_continuous(position = "top") +
+#   scale_x_continuous(breaks = seq_along(bin_hier$labels[bin_hier$order]),
+#             labels = bin_hier$labels[bin_hier$order], position = "top",
+#             expand = c(0,0)) +
+#   theme(axis.text.x = element_text(angle = 90, hjust  = 1)) + 
+#   theme(axis.text.y = element_text(angle = 0,hjust = 1)) +
+#   scale_y_reverse(expand = c(0.01, 0)) +
+#   theme(
+#     plot.background = element_blank(),
+#     panel.grid.major = element_blank(),
+#     panel.grid.minor = element_blank(),
+#     panel.border = element_blank()
+#   )
+# ggsave("chipseq/figures/all_hclust_binary_dist.pdf", height = 44, width = 5.0)
+
+```
+
+```{r}
+## heatmaps ##
+
+library(pheatmap)
+high_binders <- peak_occurence_matrix[,colSums(peak_occurence_matrix) > 350]
+
+#plot
+pheatmap(high_binders, show_colnames = FALSE, clustering_distance_rows = "binary", clustering_distance_cols = "binary")
+
+```
+
+
+Exploring cluster with some ZNF's and 3 named proteins:
+
+(uniprot & OMIM data)
+
+protein structure:
+MTA1: one ZF domain (GATA-type, atypical)
+FUBP3: 4 KH domains
+ATF5: leucine zipper domain (CREB protein)
+
+cellular localization:
+all nuclear as expected
+
+cellular functions:
+MTA1: part of the chromatin remodeling complex
+FUBP3: binds FUSE elements with other FUBP proteins 1&2 
+    *but FUBP1 is on the far left of our clustering, far away from this cluster...
+ATF5: binds cAMP inducable promoters
+
+Tissue expression:
+MTA1: universally expressed
+FUBP3: universally expressed
+ATF5: universally expressed
+
+
+ZNF's seem to cluster based on the number of ZF domains per protein
+
+
+
+```{r}
+#tree cutting
+
+#set up hierarchy again (copied from above)
+peak_occurence_matrix <- peak_occurence_matrix[rowSums(peak_occurence_matrix) > 250, ]
+peak_occurence_dist <- dist(peak_occurence_matrix, method = "binary")
+bin_hier <- hclust(peak_occurence_dist, method = "complete")
+
+#filter hierarchy to get only clusters that are similar above a certain threshold based on height of the branch
+clust <- cutree(bin_hier, h=0.52)
+#clustering cuttoff set so that only the cluster seen by eye is defined
+table(clust)
+
+clust_df <- data.frame(dbp = names(clust), cluster = clust)
+#we're looking at cluster 11 based on this cuttoff
+
+##looking at promoters that all the proteins in that cluster bind to (Maria's code)
+#looking at dbps in cluster11
+cluster11 <- filter(clust_df,cluster == 11)
+#peak occurrences of cluster 11 dbps
+po_clust11 <- peak_occurence_matrix[row.names(peak_occurence_matrix) %in% row.names(cluster11),]
+#promoters that ALL dpbs in cluster 11 bind (there are 10 dpbs)
+pro_cluster11 <- po_clust11[,colSums(po_clust11) > 9]
+#pull out the promoter names that all dbps in cluster11 bound
+pro_clus11 <- data.frame(promoters = colnames(pro_cluster11))
+write_csv(pro_clus11, "/scratch/Shares/rinnclass/Katy/CLASS_2021/analysis/02_exploring_analysis/cluster_11_promoters_bound.csv")
+
+##questioning the validity of our clustering given that there's not clear similarities between the proteins in our cluster, and proteins that should be similar are not clustered together (FUBP1 and 3, & ATF's)
+
+
+#there are 3007 promoters bound by all the proteins in cluster 11 (10 proteins in the cluster)
+
+```
+
