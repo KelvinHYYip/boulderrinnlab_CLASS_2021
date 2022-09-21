@@ -1,0 +1,99 @@
+---
+title: "00_consensus_peaks"
+author: "Group 2"
+date: "4/14/2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(GenomicRanges)
+source("../../util/plotting_functions.R")
+source("../../util/intersect_functions.R")
+
+```
+
+Note: pay attention to file paths
+
+For information on obtaining Chip Seq data, reference 02_designfile.Rmd
+
+Also download data to desired directory ('/scratch/Shares/rinnclass/data/XXXX' in our case) using wget.
+Download gencode annotation from:
+ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_32/gencode.v32.annotation.gtf.gz
+
+Create and export consensus peaks from individual peak files.
+
+```{r}
+consensus_peaks <- create_consensus_peaks("/scratch/Shares/rinnclass/data/peaks")
+
+
+for(i in 1:length(consensus_peaks)) {
+  rtracklayer::export(consensus_peaks[[i]], 
+                      paste0("./results/chipseq/consensus_peaks/", 
+                             names(consensus_peaks)[i], 
+                             "_consensus_peaks.bed"))
+}
+
+```
+
+
+Filtering the consensus peaks to files with at least 250 peaks (per last years class cut-off)
+```{r}
+
+num_peaks_threshold <- 250
+
+filtered_consensus_peaks <- consensus_peaks[sapply(consensus_peaks, length) > num_peaks_threshold]
+
+#Export consensus peaks
+for(i in 1:length(filtered_consensus_peaks)) {
+  rtracklayer::export(filtered_consensus_peaks[[i]], 
+                      paste0("./results/chipseq/filtered_consensus/", 
+                             names(filtered_consensus_peaks)[i], 
+                             "_filtered_consensus_peaks.bed"))
+}
+
+
+```
+
+Exporting Genomic features that we will use frequently and save to results folder.
+
+1) Promoter Regions
+```{r}
+gencode_gr <- rtracklayer::import("/Shares/rinn_class/data/genomes/human/gencode/v32/gencode.v32.annotation.gtf")
+
+lncrna_mrna_promoters <- get_promoter_regions(gencode_gr, biotype = c("lncRNA", "protein_coding"))
+rtracklayer::export(lncrna_mrna_promoters, "./results/lncrna_mrna_promoters.gtf")
+
+
+lncrna_promoters <- get_promoter_regions(gencode_gr, biotype = "lncRNA")
+rtracklayer::export(lncrna_promoters, "./results/lncrna_promoters.gtf")
+
+
+mrna_promoters <- get_promoter_regions(gencode_gr, biotype = "protein_coding")
+rtracklayer::export(mrna_promoters, "./results/mrna_promoters.gtf")
+```
+
+
+2) Gene Bodies
+
+```{r}
+lncrna_mrna_genebody <- gencode_gr[gencode_gr$type == "gene" & 
+                                     gencode_gr$gene_type %in% c("lncRNA", "protein_coding")]
+rtracklayer::export(lncrna_mrna_genebody, "./results/lncrna_mrna_genebody.gtf")
+
+
+lncrna_genebody <- gencode_gr[gencode_gr$type == "gene" & 
+                                gencode_gr$gene_type %in% c("lncRNA")]
+rtracklayer::export(lncrna_genebody, "./results/lncrna_genebody.gtf")
+
+
+mrna_genebody <- gencode_gr[gencode_gr$type == "gene" & 
+                              gencode_gr$gene_type %in% c("protein_coding")]
+rtracklayer::export(mrna_genebody, "./results/mrna_genebody.gtf")
+
+```
+
+
+
